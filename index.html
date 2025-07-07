@@ -86,7 +86,7 @@
         <header class="text-center mb-8 border-b pb-4">
             <h1 class="text-3xl md:text-4xl font-bold text-sky-700">نظام إدارة مخططات الجلوس الامتحانية</h1>
             <p class="text-slate-500 mt-2">أداة ذكية لتوزيع الطلاب في القاعات الامتحانية بسهولة وكفاءة</p>
-  <p class="text-3xl md:text-2xl font-bold text-orange-500">اعداد الاستاذ : حسين جهاد رضا </p>
+<p class="text-3xl md:text-2xl font-bold text-orange-500">اعداد الاستاذ : حسين جهاد رضا </p>
 <p class="text-2xl md:text-2xl font-bold text-green-500">اشراف الاستاذ : تحسين هارون مهدي </p>
         </header>
 
@@ -433,8 +433,11 @@
 
             hallForm.addEventListener('submit', (e) => {
                 e.preventDefault();
+                const hallId = hallIdInput.value ? parseInt(hallIdInput.value) : Date.now();
+                const isEditing = !!hallIdInput.value;
+
                 const hallData = {
-                    id: hallIdInput.value ? parseInt(hallIdInput.value) : Date.now(),
+                    id: hallId,
                     name: hallNameInput.value,
                     location: hallLocationInput.value,
                     rows: parseInt(hallRowsInput.value),
@@ -444,10 +447,28 @@
                 };
 
                 const existingIndex = state.halls.findIndex(h => h.id === hallData.id);
-                if (existingIndex > -1) {
-                    hallData.disabledSeats = state.halls[existingIndex].disabledSeats;
+
+                if (isEditing) {
+                    const oldHall = state.halls[existingIndex];
+                    hallData.sector1Name = oldHall.sector1Name;
+                    hallData.sector2Name = oldHall.sector2Name;
+                    hallData.disabledSeats = oldHall.disabledSeats;
                     state.halls[existingIndex] = hallData;
                 } else {
+                    let maxSectorNum = 0;
+                    state.halls.forEach(h => {
+                        [h.sector1Name, h.sector2Name].forEach(sectorName => {
+                            if (sectorName) {
+                                const sectorMatch = sectorName.match(/(\d+)/);
+                                if (sectorMatch) {
+                                    const num = parseInt(sectorMatch[1], 10);
+                                    if (num > maxSectorNum) maxSectorNum = num;
+                                }
+                            }
+                        });
+                    });
+                    hallData.sector1Name = `قطاع (${maxSectorNum + 1})`;
+                    hallData.sector2Name = `قطاع (${maxSectorNum + 2})`;
                     state.halls.push(hallData);
                 }
                 
@@ -466,12 +487,54 @@
             };
             window.editHall = (id) => { const hall = state.halls.find(h => h.id === id); if(hall) toggleHallModal(true, hall); };
             window.copyHall = (id) => {
-                const hall = state.halls.find(h => h.id === id);
-                if(hall) {
-                    const newHall = { ...hall, id: Date.now(), name: `${hall.name} (نسخة)` };
-                    state.halls.push(newHall);
-                    updateUI();
+                const hallToCopy = state.halls.find(h => h.id === id);
+                if (!hallToCopy) return;
+
+                // Smart Hall Naming
+                let newHallName = `${hallToCopy.name} (نسخة)`;
+                const nameMatch = hallToCopy.name.match(/^(.*?)[\s(]*(\d+)\)?$/);
+                let baseName = hallToCopy.name;
+                if (nameMatch) {
+                    baseName = nameMatch[1].trim();
                 }
+                let maxNum = 0;
+                const regex = new RegExp(`^${baseName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')}[\\s(]*(\\d+)\\)?$`);
+                state.halls.forEach(h => {
+                    const match = h.name.match(regex);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > maxNum) {
+                            maxNum = num;
+                        }
+                    }
+                });
+                newHallName = `${baseName} (${maxNum + 1})`;
+
+                // Smart Sector Naming
+                let maxSectorNum = 0;
+                state.halls.forEach(h => {
+                    [h.sector1Name, h.sector2Name].forEach(sectorName => {
+                        if (sectorName) {
+                            const sectorMatch = sectorName.match(/(\d+)/);
+                            if (sectorMatch) {
+                                const num = parseInt(sectorMatch[1], 10);
+                                if (num > maxSectorNum) maxSectorNum = num;
+                            }
+                        }
+                    });
+                });
+
+                const newHall = {
+                    ...hallToCopy,
+                    id: Date.now(),
+                    name: newHallName,
+                    sector1Name: `قطاع (${maxSectorNum + 1})`,
+                    sector2Name: `قطاع (${maxSectorNum + 2})`,
+                    disabledSeats: new Set(hallToCopy.disabledSeats), 
+                };
+
+                state.halls.push(newHall);
+                updateUI();
             };
             window.deleteHall = (id) => {
                 if (confirm('هل أنت متأكد من حذف هذه القاعة؟')) {
@@ -553,11 +616,11 @@
                             <h3 class="font-bold text-xl mb-4 text-center">${hall.name}</h3>
                             <div class="flex gap-8 justify-center">
                                 <div class="text-center">
-                                    <h4 class="font-bold text-lg mb-4">قطاع (1)</h4>
+                                    <h4 class="font-bold text-lg mb-4">${hall.sector1Name}</h4>
                                     <div id="dist-grid-${hall.id}-1" class="grid gap-2"></div>
                                 </div>
                                 <div class="text-center">
-                                    <h4 class="font-bold text-lg mb-4">قطاع (2)</h4>
+                                    <h4 class="font-bold text-lg mb-4">${hall.sector2Name}</h4>
                                     <div id="dist-grid-${hall.id}-2" class="grid gap-2"></div>
                                 </div>
                             </div>`;
@@ -610,7 +673,7 @@
             };
             
             const toggleSeatDisabled = (seatId) => {
-                const [hallIdStr, coords] = seatId.split(':');
+                const [hallIdStr] = seatId.split(':');
                 const hallId = parseInt(hallIdStr);
                 const hall = state.halls.find(h => h.id === hallId);
                 if (!hall) return;
@@ -836,7 +899,7 @@
                 centerDiv.className = 'w-1/2 text-center';
                 centerDiv.innerHTML = `
                     <h1 class="text-2xl font-bold">قاعة (${hall.name}) - ${hall.location || ''}</h1>
-                    <h2 class="text-xl font-bold mt-2">قطاع ( ${sector} )</h2>
+                    <h2 class="text-xl font-bold mt-2">${sector === 1 ? hall.sector1Name : hall.sector2Name}</h2>
                 `;
 
                 const rightDiv = document.createElement('div');
